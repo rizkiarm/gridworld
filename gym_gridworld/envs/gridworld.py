@@ -5,26 +5,10 @@ from gym.spaces import Discrete
 import numpy as np
 import random
 
-from collections import namedtuple
-
 import logging
 logger = logging.getLogger(__name__)
 
-
-simple_map = \
-[
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,0,0,0,1,0,0,0,0,0,0,1],
-    [1,0,0,0,0,0,0,1,0,0,0,0,0,0,1],
-    [1,0,0,0,0,0,0,1,1,1,1,1,0,0,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-]
-
-VonNeumannMotion = namedtuple('VonNeumannMotion', 
-                              ['up', 'down', 'left', 'right'], 
-                              defaults=[[-1, 0], [1, 0], [0, -1], [0, 1]])
+from .utils import random_maze, random_shape_maze, simple_map, solvable_map, VonNeumannMotion
 
 class Reward:
     ITEM = 1
@@ -103,13 +87,14 @@ class StatelessGridWorld(BaseGridWorld):
         return next_state, reward, done, {}
 
 class GridWorldEnv(StatelessGridWorld):
-    def __init__(self, height=7, width=15, n_items=4):
+    def __init__(self, height=7, width=15, n_items=4, map_type='simple'):
         super().__init__()
         self.width = width
         self.height = height
         self.n_items = n_items
         self.observation_space = Box(low=0, high=1, shape=[3]+[self.height, self.width], dtype=np.uint8)
         self.action_space = Discrete(len(self.motions))
+        self.map_type = map_type
         self.reset()
 
     def step(self, action):
@@ -118,7 +103,15 @@ class GridWorldEnv(StatelessGridWorld):
 
     def reset(self):
         self.state = np.zeros((3, self.height, self.width))
-        self.state[Index.WALL, :, :] = np.array(simple_map) 
+        if self.map_type == 'simple':
+            generated_map = simple_map
+        elif self.map_type == 'random_maze':
+            generated_map = solvable_map(random_maze, self.width, self.height, complexity=0.08, density=0.1)
+        elif self.map_type == 'random_shape_maze':
+            generated_map = solvable_map(random_shape_maze, self.width, self.height, max_shapes=8, max_size=2, allow_overlap=False)
+        else:
+            raise NotImplementedError
+        self.state[Index.WALL, :, :] = np.array(generated_map)
 
         empty = list(zip(*np.where(self.state[Index.WALL] == 0)))
         empty_positions = random.sample(empty, 1 + self.n_items)
