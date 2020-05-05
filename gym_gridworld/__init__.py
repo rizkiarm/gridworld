@@ -65,3 +65,10 @@ register(
     kwargs={'map_type': 'random_shape_maze', 'n_items': 1},
     max_episode_steps=500
 )
+
+register(
+    id='GridWorldRandomShape10K4-v0',
+    entry_point='gym_gridworld.envs:GridWorldEnv',
+    kwargs={'map_type': 'random_shape_maze', 'n_items': 4, 'predefined': True},
+    max_episode_steps=500
+)

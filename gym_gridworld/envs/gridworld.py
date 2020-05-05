@@ -2,13 +2,19 @@ import gym
 from gym.spaces import Box
 from gym.spaces import Discrete
 
+from tqdm import trange
+
 import numpy as np
 import random
+import os
+import pickle
 
 import logging
 logger = logging.getLogger(__name__)
 
 from .utils import random_maze, random_shape_maze, simple_map, solvable_map, VonNeumannMotion
+
+SCRIPTH_PATH = os.path.dirname(os.path.realpath(__file__))
 
 class Reward:
     ITEM = 1
@@ -87,7 +93,7 @@ class StatelessGridWorld(BaseGridWorld):
         return next_state, reward, done, {}
 
 class GridWorldEnv(StatelessGridWorld):
-    def __init__(self, height=7, width=15, n_items=4, map_type='simple'):
+    def __init__(self, height=7, width=15, n_items=4, map_type='simple', predefined=False):
         super().__init__()
         self.width = width
         self.height = height
@@ -95,22 +101,44 @@ class GridWorldEnv(StatelessGridWorld):
         self.observation_space = Box(low=0, high=1, shape=[3]+[self.height, self.width], dtype=np.uint8)
         self.action_space = Discrete(len(self.motions))
         self.map_type = map_type
+        self.predefined = predefined
+        if self.predefined:
+            with open(self.filepath, 'rb') as f:
+                self.maps = pickle.load(f)
         self.reset()
+
+    @property
+    def name(self):
+        return '{}_{}x{}_n{}'.format(self.map_type, self.width, self.height, self.n_items)
+
+    @property
+    def filepath(self):
+        return os.path.join(SCRIPTH_PATH, 'data', '{}.pickle'.format(self.name))
+
+    def save(self, k):
+        maps = [self.generate_map() for _ in trange(k)]
+        with open(self.filepath, 'wb') as f:
+            pickle.dump(maps, f)
 
     def step(self, action):
         self.state, reward, done, info = self.state_step(self.state, action)
         return self.state, reward, done, info
 
-    def reset(self):
-        self.state = np.zeros((3, self.height, self.width))
-        if self.map_type == 'simple':
-            generated_map = simple_map
+    def generate_map(self):
+        if self.predefined:
+            return random.choice(self.maps)
+        elif self.map_type == 'simple':
+            return simple_map
         elif self.map_type == 'random_maze':
-            generated_map = solvable_map(random_maze, self.width, self.height, complexity=0.08, density=0.1)
+            return solvable_map(random_maze, self.width, self.height, complexity=0.08, density=0.1)
         elif self.map_type == 'random_shape_maze':
-            generated_map = solvable_map(random_shape_maze, self.width, self.height, max_shapes=8, max_size=2, allow_overlap=False)
+            return solvable_map(random_shape_maze, self.width, self.height, max_shapes=8, max_size=2, allow_overlap=False)
         else:
             raise NotImplementedError
+
+    def reset(self):
+        self.state = np.zeros((3, self.height, self.width))
+        generated_map = self.generate_map()
         self.state[Index.WALL, :, :] = np.array(generated_map)
 
         empty = list(zip(*np.where(self.state[Index.WALL] == 0)))
@@ -125,8 +153,7 @@ class GridWorldEnv(StatelessGridWorld):
         return np.sum([(i+1)*k for i, k in enumerate(self.state)], axis=0)
 
 
-if __name__ == '__main__':
-    env = GridWorldEnv()
+def play(env):
     state = env.reset()
     print(env.render())
     rewards = 0
@@ -138,3 +165,23 @@ if __name__ == '__main__':
         print('Action:', ['up', 'down', 'left', 'right'][action])
         print(env.render())
         print('Reward:', reward, '\tDone:', done, '\tTotal Rewards:', rewards)
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='GridWorld')
+    parser.add_argument('--map', default='simple', type=str)
+    parser.add_argument('--width', default=15, type=int)
+    parser.add_argument('--height', default=7, type=int)
+    parser.add_argument('--n_items', default=4, type=int)
+    parser.add_argument('--save', action='store_true')
+    parser.add_argument('--k', default=10000, type=int)
+
+    args = parser.parse_args()
+
+    env = GridWorldEnv(args.height, args.width, args.n_items, args.map)
+
+    if args.save:
+        env.save(args.k)
+        exit()
+    play(env)
